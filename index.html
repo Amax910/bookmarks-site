@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#fb542b">
+  <title>Bookmarks</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-48.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header id="top">
+    <div class="bar">
+      <h1>Bookmarks</h1>
+      <button id="syncChip" class="chip" type="button">…</button>
+      <button id="menuBtn" class="iconbtn" type="button" aria-label="Menu">⋯</button>
+    </div>
+    <input id="search" type="search" placeholder="Search names, addresses, folders…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    <div class="filters">
+      <label class="toggle"><input type="checkbox" id="hideChecked"> Hide checked</label>
+      <span id="counts" class="muted"></span>
+    </div>
+  </header>
+
+  <div id="notice" role="status" hidden></div>
+
+  <main id="list"></main>
+
+  <!-- First run -->
+  <section id="welcome" class="card" hidden>
+    <h2>Your Brave bookmarks, on your phone</h2>
+    <p>Connect to the private GitHub repo your laptop extension syncs to. Everything is decrypted here, on your phone.</p>
+    <button type="button" class="primary" data-open="settingsDlg">Connect</button>
+    <button type="button" class="secondary" id="welcomeImport">Or import a CSV file</button>
+  </section>
+
+  <!-- Tap a bookmark: ask how to open -->
+  <dialog id="askDlg" class="sheet">
+    <form method="dialog">
+      <div class="sheet-title" id="askTitle"></div>
+      <div class="sheet-sub muted" id="askHost"></div>
+      <button value="new" class="primary">Open in new tab</button>
+      <button value="same" class="secondary">Open in this tab</button>
+      <button value="copy" class="secondary">Copy link</button>
+      <label class="toggle remember"><input type="checkbox" id="askRemember"> Always do this (change later in ⋯ menu)</label>
+      <p class="tip muted">For a <b>private tab</b>, a <b>tab group</b> or a <b>background tab</b>, long-press the bookmark instead and use Brave’s own menu.</p>
+      <button value="cancel" class="ghost">Cancel</button>
+    </form>
+  </dialog>
+
+  <!-- ⋯ menu -->
+  <dialog id="menuDlg" class="sheet">
+    <form method="dialog">
+      <div class="sheet-title">Menu</div>
+      <label class="field">When I tap a bookmark
+        <select id="tapMode">
+          <option value="ask">Ask every time</option>
+          <option value="new">Open in a new tab</option>
+          <option value="same">Open in this tab</option>
+        </select>
+      </label>
+      <button value="sync" class="secondary">Sync now</button>
+      <button value="export" class="secondary">Export CSV</button>
+      <button value="import" class="secondary">Import CSV…</button>
+      <button value="settings" class="secondary">Sync settings</button>
+      <button value="cancel" class="ghost">Close</button>
+    </form>
+  </dialog>
+
+  <!-- Sync settings -->
+  <dialog id="settingsDlg" class="sheet">
+    <form id="settingsForm" autocomplete="off">
+      <div class="sheet-title">Sync settings</div>
+      <p class="muted small">Use the same repo and passphrase as the extension on your laptop. These stay on this phone only.</p>
+      <label class="field">GitHub username <input name="owner" required spellcheck="false" autocapitalize="off"></label>
+      <label class="field">Private repo name <input name="repo" required spellcheck="false" autocapitalize="off"></label>
+      <label class="field">Access token <input name="token" type="password" required spellcheck="false" autocapitalize="off"></label>
+      <label class="field">Passphrase <input name="passphrase" type="password" required></label>
+      <label class="toggle"><input type="checkbox" id="showSecrets"> Show token and passphrase</label>
+      <div id="settingsMsg" class="msg" role="status"></div>
+      <button type="submit" class="primary" id="settingsSave">Connect &amp; sync</button>
+      <button type="button" class="secondary danger" id="forget">Forget on this phone</button>
+      <button type="button" class="ghost" id="settingsClose">Close</button>
+    </form>
+  </dialog>
+
+  <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
