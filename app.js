@@ -272,13 +272,62 @@ function setFlag(kind, ids, value) {
   const map = kind === 'star' ? state.stars : state.marks;
   const now = Date.now();
   for (const id of ids) map[id] = value ? now : -now;
-  save(kind === 'star' ? KEYS.stars : KEYS.marks, map);
+  commitFlags(kind, ids);
+}
+
+function commitFlags(kind, ids) {
+  save(kind === 'star' ? KEYS.stars : KEYS.marks, kind === 'star' ? state.stars : state.marks);
   state.pending = true;
   save(KEYS.pending, true);
   state.popId = ids.length === 1 ? ids[0] : null;
   schedulePush();
   render();
   setTimeout(() => (state.popId = null), 400);
+}
+
+// ★ marks the last bookmark you picked in a folder, so each folder has at
+// most one: highlighting a bookmark takes the ★ off its siblings.
+const folderOf = (item) => item.folders.at(-1) ?? '';
+
+function highlightOnly(item) {
+  const others = state.items.filter((it) => it.id !== item.id && folderOf(it) === folderOf(item) && starred(it.id));
+  const before = Object.fromEntries([item, ...others].map((it) => [it.id, state.stars[it.id] || 0]));
+  const now = Date.now();
+  state.stars[item.id] = now;
+  for (const it of others) state.stars[it.id] = -now;
+  commitFlags('star', [item.id]);
+  return {
+    moved: others.length > 0,
+    undo: () => {
+      const t = Date.now();
+      for (const [id, v] of Object.entries(before)) state.stars[id] = v > 0 ? t : -t;
+      commitFlags('star', [item.id]);
+    },
+  };
+}
+
+// Tidies up older data (or ★s from another device): keeps only the most
+// recent ★ in each folder.
+function oneStarPerFolder() {
+  const keep = new Map();
+  const drop = [];
+  for (const it of state.items) {
+    if (!starred(it.id)) continue;
+    const f = folderOf(it);
+    const cur = keep.get(f);
+    if (!cur) keep.set(f, it);
+    else if (state.stars[it.id] > state.stars[cur.id]) {
+      drop.push(cur);
+      keep.set(f, it);
+    } else drop.push(it);
+  }
+  if (!drop.length) return;
+  const now = Date.now();
+  for (const it of drop) state.stars[it.id] = -now;
+  save(KEYS.stars, state.stars);
+  state.pending = true;
+  save(KEYS.pending, true);
+  schedulePush();
 }
 
 function toggleCheck(item, { quiet } = {}) {
@@ -289,10 +338,14 @@ function toggleCheck(item, { quiet } = {}) {
 }
 
 function toggleStar(item, { quiet } = {}) {
-  const was = starred(item.id);
-  setFlag('star', [item.id], !was);
   buzz();
-  if (!quiet) toast(was ? 'Highlight removed' : '★ Highlighted', () => setFlag('star', [item.id], was));
+  if (starred(item.id)) {
+    setFlag('star', [item.id], false);
+    if (!quiet) toast('Highlight removed', () => highlightOnly(item));
+    return;
+  }
+  const r = highlightOnly(item);
+  if (!quiet) toast(r.moved ? '★ Highlight moved here' : '★ Highlighted', r.undo);
 }
 
 // ---------- sync ----------
@@ -532,9 +585,9 @@ function onLongPress(item, row) {
   row.longPressed = true;
   setTimeout(() => (row.longPressed = false), 800);
   if (starred(item.id)) return;
-  setFlag('star', [item.id], true);
+  const r = highlightOnly(item);
   buzz(18);
-  toast('★ Highlighted (long-press)', () => setFlag('star', [item.id], false));
+  toast(r.moved ? '★ Highlight moved here (long-press)' : '★ Highlighted (long-press)', r.undo);
 }
 
 // ---------- swipe ----------
@@ -844,7 +897,10 @@ let lastView = null;
 function render() {
   renderChip();
   const hasData = !!state.snapshot;
-  if (hasData) indexSnapshot(); // cheap; keeps order in step with sort and ✓ changes
+  if (hasData) {
+    indexSnapshot(); // cheap; keeps order in step with sort and ✓ changes
+    oneStarPerFolder();
+  }
   const locked = !state.settings && !!state.loginText;
   $('unlock').hidden = !locked || hasData;
   $('welcome').hidden = hasData || !!state.settings || locked || state.loginText === undefined;
