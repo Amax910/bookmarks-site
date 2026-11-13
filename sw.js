@@ -1,7 +1,7 @@
 // Makes the site open instantly and work offline. Only the site's own files
 // are cached; GitHub API calls always go to the network.
 
-const CACHE = 'bookmarks-site-v3';
+const CACHE = 'bookmarks-site-v4';
 const SHELL = [
   './',
   'index.html',

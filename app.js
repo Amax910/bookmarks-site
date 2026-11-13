@@ -67,6 +67,7 @@ const state = {
   ui: {
     expanded: [],
     filter: savedUi.hideChecked ? 'todo' : 'all',
+    sort: 'default',
     query: '',
     treeScroll: 0,
     tapMode: 'ask',
@@ -193,21 +194,75 @@ function showNotice(text) {
   noticeEl.hidden = !text;
 }
 
+// ---------- sorting ----------
+
+const SORTS = [
+  ['default', 'Bookmark order'],
+  ['name', 'Name (A–Z)'],
+  ['nameDesc', 'Name (Z–A)'],
+  ['newest', 'Newest added'],
+  ['oldest', 'Oldest added'],
+  ['site', 'Website'],
+  ['todo', 'To check first'],
+];
+
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+// `get` turns a tree node or a list item into { title, url, date, id }.
+function comparator(sort, get) {
+  const name = (a, b) => collator.compare(get(a).title, get(b).title);
+  switch (sort) {
+    case 'name':
+      return name;
+    case 'nameDesc':
+      return (a, b) => name(b, a);
+    case 'newest':
+      return (a, b) => get(b).date - get(a).date || name(a, b);
+    case 'oldest':
+      return (a, b) => get(a).date - get(b).date || name(a, b);
+    case 'site':
+      return (a, b) => collator.compare(hostOf(get(a).url), hostOf(get(b).url)) || name(a, b);
+    case 'todo':
+      return (a, b) => checked(get(a).id) - checked(get(b).id);
+    default:
+      return null; // keep your own bookmark order
+  }
+}
+const nodeView = (n) => ({ title: n.t || n.u || '', url: n.u || '', date: n.d || 0, id: n.i });
+const itemView = (it) => ({ title: it.title, url: it.url, date: it.dateAdded, id: it.id });
+
+// A folder's children in display order: sub-folders first, then links.
+function sortedChildren(nodes) {
+  const folders = (nodes || []).filter((n) => !n.u);
+  const links = (nodes || []).filter((n) => n.u);
+  const s = state.ui.sort;
+  if (s === 'name' || s === 'nameDesc') folders.sort(comparator(s, nodeView));
+  const cmp = comparator(s, nodeView);
+  if (cmp) links.sort(cmp);
+  return { folders, links };
+}
+
+function sortItems(items) {
+  const cmp = comparator(state.ui.sort, itemView);
+  return cmp ? [...items].sort(cmp) : items;
+}
+
 // ---------- data ----------
 
 function indexSnapshot() {
   state.items = [];
   state.byId.clear();
-  // Same order as on screen: inside a folder, sub-folders first, then links.
+  // Same order as on screen (including the chosen sort), so "Next" follows it.
   const add = (n, path, folders) => {
     const item = { id: n.i, title: n.t || n.u, url: n.u, path: path.join(' › '), dateAdded: n.d || 0, folders };
     state.items.push(item);
     state.byId.set(n.i, item);
   };
-  (function walk(nodes, path, folders, top) {
-    for (const n of nodes || []) if (!n.u) walk(n.c, n.t ? [...path, n.t] : path, [...folders, n.i], false);
-    for (const n of nodes || []) if (n.u) add(n, path, folders);
-  })(state.snapshot?.tree, [], [], true);
+  (function walk(nodes, path, folders) {
+    const { folders: subs, links } = sortedChildren(nodes);
+    for (const n of subs) walk(n.c, n.t ? [...path, n.t] : path, [...folders, n.i]);
+    for (const n of links) add(n, path, folders);
+  })(state.snapshot?.tree, [], []);
   if (!state.ui.expanded.length && state.snapshot?.tree?.length) {
     expanded.add(state.snapshot.tree[0].i); // open the first top-level folder on first run
   }
@@ -311,7 +366,7 @@ async function sync() {
 
 function renderChip() {
   const text = chipEl.querySelector('.chip-text');
-  chipEl.className = 'chip';
+  chipEl.className = 'sync';
   chipEl.title = '';
   if (!state.settings) {
     text.textContent = state.loginText ? 'Locked' : state.snapshot ? 'CSV only' : 'Not connected';
@@ -574,9 +629,12 @@ function passesFilter(id) {
   }
 }
 
-function itemRow(item, { tokens, showPath } = {}) {
+const indentFor = (depth) => `${16 + depth * 16}px`;
+
+function itemRow(item, { tokens, showPath, depth = 0 } = {}) {
   const row = el('div', 'item');
   row.dataset.id = item.id;
+  row.style.setProperty('--indent', indentFor(depth));
   if (checked(item.id)) row.classList.add('seen');
   if (starred(item.id)) row.classList.add('starred');
   if (state.flashId === item.id) row.classList.add('flash');
@@ -586,7 +644,6 @@ function itemRow(item, { tokens, showPath } = {}) {
   bg.append(el('span', 'l', checked(item.id) ? '↺ Un-check' : '✓ Checked'), el('span', 'r', starred(item.id) ? 'Remove ★' : '★ Highlight'));
 
   const layer = el('div', 'layer');
-  layer.style.paddingLeft = '14px';
 
   let link;
   if (isOpenable(item.url)) {
@@ -638,29 +695,23 @@ function folderBlock(node, depth) {
   const stats = folderStats(node);
   if (state.ui.filter !== 'all' && !stats.shown) return null;
 
-  const block = el('div', depth === 0 ? 'group' : 'group sub');
+  const block = el('div', depth === 0 ? 'group' : 'sub-folder');
   const open = expanded.has(node.i);
   if (open) block.classList.add('open');
 
   const row = el('div', 'folder-row');
-  row.style.paddingLeft = `${14 + depth * 14}px`;
+  row.style.setProperty('--indent', indentFor(depth));
   const icon = el('span', 'folder-icon');
   icon.append(folderSvg());
-  const main = el('div', 'folder-main');
-  main.append(el('div', 'fname', node.t || 'Untitled folder'));
-  const meta = el('div', 'fmeta');
-  if (stats.total && stats.seen === stats.total) {
-    meta.append(el('span', 'done-badge', `✓ All ${stats.total} checked`));
-  } else {
-    const bar = el('span', 'minibar');
-    const fill = el('i');
-    fill.style.width = `${stats.total ? (stats.seen / stats.total) * 100 : 0}%`;
-    bar.append(fill);
-    meta.append(bar, el('span', null, `${stats.seen}/${stats.total}`));
-  }
-  if (state.ui.filter !== 'all') meta.append(el('span', null, `· ${stats.shown} shown`));
-  main.append(meta);
-  row.append(icon, main, chevSvg());
+  // One short status instead of bars and counts: how many are left to check.
+  const left = stats.total - stats.seen;
+  let status;
+  if (state.ui.filter !== 'all') status = el('span', 'left', String(stats.shown));
+  else if (!stats.total) status = el('span', 'left', 'empty');
+  else if (!left) status = el('span', 'left done', '✓ Done');
+  else status = el('span', 'left', `${left} left`);
+  status.title = `${stats.seen} of ${stats.total} checked`;
+  row.append(icon, el('span', 'fname', node.t || 'Untitled folder'), status, chevSvg());
   row.addEventListener('click', () => {
     if (expanded.has(node.i)) expanded.delete(node.i);
     else {
@@ -677,24 +728,25 @@ function folderBlock(node, depth) {
     // Only the folder you just opened animates, not every redraw.
     const kids = el('div', justOpened === node.i ? 'children anim' : 'children');
     let shown = 0;
-    for (const c of node.c || []) {
-      if (!c.u) {
-        const b = folderBlock(c, depth + 1);
-        if (b) {
-          kids.append(b);
-          shown++;
-        }
-      }
-    }
-    for (const c of node.c || []) {
-      if (c.u && passesFilter(c.i)) {
-        const r = itemRow(state.byId.get(c.i));
-        r.querySelector('.layer').style.paddingLeft = `${14 + (depth + 1) * 14}px`;
-        kids.append(r);
+    const { folders, links } = sortedChildren(node.c);
+    for (const c of folders) {
+      const b = folderBlock(c, depth + 1);
+      if (b) {
+        kids.append(b);
         shown++;
       }
     }
-    if (!shown) kids.append(el('div', 'hint-row', node.c?.length ? 'Nothing here for this filter' : 'Empty folder'));
+    for (const c of links) {
+      if (passesFilter(c.i)) {
+        kids.append(itemRow(state.byId.get(c.i), { depth: depth + 1 }));
+        shown++;
+      }
+    }
+    if (!shown) {
+      const h = el('div', 'hint-row', node.c?.length ? 'Nothing here for this filter' : 'Empty folder');
+      h.style.setProperty('--indent', indentFor(depth + 1));
+      kids.append(h);
+    }
     block.append(kids);
   }
   return block;
@@ -725,41 +777,38 @@ function renderSearch(query) {
       hits.push({ it, inTitle: tokens.every((tok) => t.includes(tok)) });
     }
   }
-  hits.sort((a, b) => b.inTitle - a.inTitle);
   if (!hits.length) {
     const f = document.createDocumentFragment();
     f.append(emptyState('🔍', `No bookmarks match “${query}”${state.ui.filter !== 'all' ? ' with this filter' : ''}.`));
     return f;
   }
-  return flatList(
-    hits.map((h) => h.it),
-    tokens,
-    `${hits.length} result${hits.length === 1 ? '' : 's'}`
-  );
+  // Best matches (all words in the title) first, unless you picked a sort.
+  const found =
+    state.ui.sort === 'default' ? hits.sort((a, b) => b.inTitle - a.inTitle).map((h) => h.it) : sortItems(hits.map((h) => h.it));
+  return flatList(found, tokens, `${hits.length} result${hits.length === 1 ? '' : 's'}`);
 }
 
 function renderStarred() {
-  const items = state.items.filter((it) => starred(it.id)).sort((a, b) => state.stars[b.id] - state.stars[a.id]);
+  const starredItems = state.items.filter((it) => starred(it.id));
+  const items =
+    state.ui.sort === 'default' ? starredItems.sort((a, b) => state.stars[b.id] - state.stars[a.id]) : sortItems(starredItems);
   if (!items.length) {
     const f = document.createDocumentFragment();
     f.append(emptyState('★', 'Nothing highlighted yet. Swipe a bookmark left, or long-press it.'));
     return f;
   }
-  return flatList(items, null, `${items.length} highlighted · newest first`);
+  return flatList(items, null, `${items.length} highlighted${state.ui.sort === 'default' ? ' · newest first' : ''}`);
 }
 
 function renderTree() {
   const frag = document.createDocumentFragment();
-  const tops = (state.snapshot?.tree || []).filter((n) => n.u || n.c?.length);
-  const loose = el('div', 'group');
-  for (const n of tops) {
-    if (n.u) {
-      if (passesFilter(n.i)) loose.append(itemRow(state.byId.get(n.i)));
-    } else {
-      const b = folderBlock(n, 0);
-      if (b) frag.append(b);
-    }
+  const { folders, links } = sortedChildren((state.snapshot?.tree || []).filter((n) => n.u || n.c?.length));
+  for (const n of folders) {
+    const b = folderBlock(n, 0);
+    if (b) frag.append(b);
   }
+  const loose = el('div', 'group');
+  for (const n of links) if (passesFilter(n.i)) loose.append(itemRow(state.byId.get(n.i)));
   if (loose.childNodes.length) frag.append(loose);
   if (!frag.childNodes.length) {
     frag.append(
@@ -781,7 +830,8 @@ function renderHeader() {
   }
   $('progress').hidden = !total;
   $('progressFill').style.width = `${total ? (seen / total) * 100 : 0}%`;
-  $('progressLabel').textContent = `${seen.toLocaleString()} / ${total.toLocaleString()} checked`;
+  $('progress').title = `${seen.toLocaleString()} of ${total.toLocaleString()} checked`;
+  $('sortDot').hidden = state.ui.sort === 'default';
   const counts = { all: total, todo: total - seen, checked: seen, starred: stars };
   for (const b of document.querySelectorAll('.fchip')) {
     b.classList.toggle('on', b.dataset.filter === state.ui.filter);
@@ -794,6 +844,7 @@ let lastView = null;
 function render() {
   renderChip();
   const hasData = !!state.snapshot;
+  if (hasData) indexSnapshot(); // cheap; keeps order in step with sort and ✓ changes
   const locked = !state.settings && !!state.loginText;
   $('unlock').hidden = !locked || hasData;
   $('welcome').hidden = hasData || !!state.settings || locked || state.loginText === undefined;
@@ -843,6 +894,7 @@ function onScreen(row) {
 // Walks bookmarks in on-screen order, opening closed folders as needed.
 nextBtn.addEventListener('click', () => {
   buzz();
+  keepFabUntil = Date.now() + 1500;
   const flat = !!searchEl.value.trim() || state.ui.filter === 'starred';
   const allRows = [...listEl.querySelectorAll('.item')];
   // Flat views (search, ★) only walk what's listed; the folder view walks everything.
@@ -882,6 +934,23 @@ nextBtn.addEventListener('click', () => {
 
 // ---------- events ----------
 
+// "Next" button: hide while scrolling down, back when scrolling up or idle.
+let lastY = window.scrollY;
+let fabTimer;
+let keepFabUntil = 0; // our own jumps scroll too; don't hide the button for those
+window.addEventListener(
+  'scroll',
+  () => {
+    const y = window.scrollY;
+    if (y > lastY + 6 && Date.now() > keepFabUntil) nextBtn.classList.add('away');
+    else if (y < lastY - 6) nextBtn.classList.remove('away');
+    lastY = y;
+    clearTimeout(fabTimer);
+    fabTimer = setTimeout(() => nextBtn.classList.remove('away'), 700);
+  },
+  { passive: true }
+);
+
 let scrollTimer;
 window.addEventListener(
   'scroll',
@@ -916,6 +985,32 @@ $('filters').addEventListener('click', (e) => {
   saveUi();
   buzz(6);
   render();
+});
+
+// Sort
+const sortDlg = $('sortDlg');
+$('sortBtn').addEventListener('click', () => {
+  const box = $('sortOptions');
+  box.replaceChildren(
+    ...SORTS.map(([value, label]) => {
+      const b = el('button', state.ui.sort === value ? 'opt on' : 'opt');
+      b.value = value;
+      b.append(el('span', null, label), el('span', 'tick', '✓'));
+      return b;
+    })
+  );
+  sortDlg.returnValue = '';
+  sortDlg.showModal();
+});
+sortDlg.addEventListener('close', () => {
+  const v = sortDlg.returnValue;
+  if (!v || v === state.ui.sort || !SORTS.some(([k]) => k === v)) return;
+  state.ui.sort = v;
+  saveUi();
+  lastView = null;
+  render();
+  window.scrollTo(0, 0);
+  toast(`Sorted: ${SORTS.find(([k]) => k === v)[1]}`);
 });
 
 // ⋯ menu

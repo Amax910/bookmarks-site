@@ -16,30 +16,32 @@
 <body>
   <header id="top">
     <div class="bar">
-      <img class="logo" src="icons/icon-48.png" alt="">
       <h1>Bookmarks</h1>
-      <button id="syncChip" class="chip" type="button"><span class="dot"></span><span class="chip-text">…</span></button>
+      <button id="syncChip" class="sync" type="button"><span class="dot"></span><span class="chip-text">…</span></button>
       <button id="menuBtn" class="iconbtn" type="button" aria-label="Menu">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
       </button>
     </div>
 
-    <div class="progress" id="progress" hidden>
-      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-      <span class="progress-label" id="progressLabel"></span>
-    </div>
-
-    <div class="searchbox">
-      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <input id="search" type="search" placeholder="Search names, sites, folders…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    <div class="tools">
+      <div class="searchbox">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      </div>
+      <button id="sortBtn" class="toolbtn" type="button" aria-label="Sort">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M3.5 16.5 7 20l3.5-3.5M17 20V4m-3.5 3.5L17 4l3.5 3.5"/></svg>
+        <span class="toolbtn-dot" id="sortDot" hidden></span>
+      </button>
     </div>
 
     <nav class="chips" id="filters" aria-label="Filter">
       <button type="button" class="fchip" data-filter="all">All <span class="n"></span></button>
       <button type="button" class="fchip" data-filter="todo">To check <span class="n"></span></button>
-      <button type="button" class="fchip" data-filter="checked">✓ Checked <span class="n"></span></button>
-      <button type="button" class="fchip" data-filter="starred">★ Highlighted <span class="n"></span></button>
+      <button type="button" class="fchip" data-filter="checked">Checked <span class="n"></span></button>
+      <button type="button" class="fchip" data-filter="starred">★ <span class="n"></span></button>
     </nav>
+
+    <div class="progress-line" id="progress" hidden><i id="progressFill"></i></div>
   </header>
 
   <div id="notice" role="status" hidden></div>
@@ -48,7 +50,7 @@
 
   <button id="nextBtn" class="fab" type="button" hidden aria-label="Jump to the next bookmark to check">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
-    <span>Next to check</span>
+    <span>Next</span>
   </button>
 
   <!-- First run -->
@@ -90,13 +92,21 @@
         <button value="same" class="secondary">Open here</button>
         <button value="copy" class="secondary">Copy link</button>
       </div>
-      <div class="row2">
-        <button value="check" class="secondary" id="askCheck">✓ Mark checked</button>
-        <button value="star" class="secondary" id="askStar">★ Highlight</button>
+      <div class="row2 quiet">
+        <button value="check" class="ghost" id="askCheck">✓ Mark checked</button>
+        <button value="star" class="ghost" id="askStar">★ Highlight</button>
       </div>
-      <label class="toggle remember"><input type="checkbox" id="askRemember"> Always open the way I pick (change in ⋯ menu)</label>
-      <p class="tip">For a <b>private tab</b>, <b>tab group</b> or <b>background tab</b>, long-press the bookmark and use Brave’s menu. Long-pressed bookmarks get highlighted ★.</p>
-      <button value="cancel" class="ghost">Cancel</button>
+      <label class="toggle remember"><input type="checkbox" id="askRemember"> Always open this way</label>
+      <p class="tip">Private tab or tab group: long-press the bookmark instead.</p>
+    </form>
+  </dialog>
+
+  <!-- Sort -->
+  <dialog id="sortDlg" class="sheet">
+    <form method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="sheet-title">Sort by</div>
+      <div class="options" id="sortOptions"></div>
     </form>
   </dialog>
 
