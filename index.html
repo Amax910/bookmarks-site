@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#fb542b">
@@ -16,39 +16,86 @@
 <body>
   <header id="top">
     <div class="bar">
+      <img class="logo" src="icons/icon-48.png" alt="">
       <h1>Bookmarks</h1>
-      <button id="syncChip" class="chip" type="button">…</button>
-      <button id="menuBtn" class="iconbtn" type="button" aria-label="Menu">⋯</button>
+      <button id="syncChip" class="chip" type="button"><span class="dot"></span><span class="chip-text">…</span></button>
+      <button id="menuBtn" class="iconbtn" type="button" aria-label="Menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+      </button>
     </div>
-    <input id="search" type="search" placeholder="Search names, addresses, folders…" autocomplete="off" spellcheck="false" enterkeyhint="search">
-    <div class="filters">
-      <label class="toggle"><input type="checkbox" id="hideChecked"> Hide checked</label>
-      <span id="counts" class="muted"></span>
+
+    <div class="progress" id="progress" hidden>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <span class="progress-label" id="progressLabel"></span>
     </div>
+
+    <div class="searchbox">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="search" type="search" placeholder="Search names, sites, folders…" autocomplete="off" spellcheck="false" enterkeyhint="search">
+    </div>
+
+    <nav class="chips" id="filters" aria-label="Filter">
+      <button type="button" class="fchip" data-filter="all">All <span class="n"></span></button>
+      <button type="button" class="fchip" data-filter="todo">To check <span class="n"></span></button>
+      <button type="button" class="fchip" data-filter="checked">✓ Checked <span class="n"></span></button>
+      <button type="button" class="fchip" data-filter="starred">★ Highlighted <span class="n"></span></button>
+    </nav>
   </header>
 
   <div id="notice" role="status" hidden></div>
 
   <main id="list"></main>
 
+  <button id="nextBtn" class="fab" type="button" hidden aria-label="Jump to the next bookmark to check">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+    <span>Next to check</span>
+  </button>
+
   <!-- First run -->
-  <section id="welcome" class="card" hidden>
+  <section id="welcome" class="welcome" hidden>
+    <img src="icons/icon-192.png" alt="" class="welcome-logo">
     <h2>Your Brave bookmarks, on your phone</h2>
-    <p>Connect to the private GitHub repo your laptop extension syncs to. Everything is decrypted here, on your phone.</p>
+    <p>Connect to the private GitHub repo your laptop extension syncs to. Everything is decrypted here, on this phone.</p>
     <button type="button" class="primary" data-open="settingsDlg">Connect</button>
-    <button type="button" class="secondary" id="welcomeImport">Or import a CSV file</button>
+    <button type="button" class="ghost" id="welcomeImport">Or import a CSV file</button>
+  </section>
+
+  <!-- Passphrase-only unlock (uses the encrypted login.enc.json published with the site) -->
+  <section id="unlock" class="welcome" hidden>
+    <img src="icons/icon-192.png" alt="" class="welcome-logo">
+    <h2>Unlock your bookmarks</h2>
+    <p>Enter your passphrase. It decrypts everything right here on this phone.</p>
+    <form id="unlockForm" autocomplete="on">
+      <input type="text" name="username" autocomplete="username" value="bookmarks" hidden readonly>
+      <input id="unlockPass" class="bigfield" type="password" name="password" autocomplete="current-password" placeholder="Passphrase" required>
+      <div id="unlockMsg" class="msg" role="status"></div>
+      <button type="submit" class="primary" id="unlockBtn">Unlock</button>
+    </form>
+    <button type="button" class="ghost" data-open="settingsDlg">Use a different repo</button>
   </section>
 
   <!-- Tap a bookmark: ask how to open -->
   <dialog id="askDlg" class="sheet">
     <form method="dialog">
-      <div class="sheet-title" id="askTitle"></div>
-      <div class="sheet-sub muted" id="askHost"></div>
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <span class="avatar big" id="askAvatar"></span>
+        <div class="sheet-head-text">
+          <div class="sheet-title" id="askTitle"></div>
+          <div class="sheet-sub" id="askHost"></div>
+        </div>
+      </div>
       <button value="new" class="primary">Open in new tab</button>
-      <button value="same" class="secondary">Open in this tab</button>
-      <button value="copy" class="secondary">Copy link</button>
-      <label class="toggle remember"><input type="checkbox" id="askRemember"> Always do this (change later in ⋯ menu)</label>
-      <p class="tip muted">For a <b>private tab</b>, a <b>tab group</b> or a <b>background tab</b>, long-press the bookmark instead and use Brave’s own menu.</p>
+      <div class="row2">
+        <button value="same" class="secondary">Open here</button>
+        <button value="copy" class="secondary">Copy link</button>
+      </div>
+      <div class="row2">
+        <button value="check" class="secondary" id="askCheck">✓ Mark checked</button>
+        <button value="star" class="secondary" id="askStar">★ Highlight</button>
+      </div>
+      <label class="toggle remember"><input type="checkbox" id="askRemember"> Always open the way I pick (change in ⋯ menu)</label>
+      <p class="tip">For a <b>private tab</b>, <b>tab group</b> or <b>background tab</b>, long-press the bookmark and use Brave’s menu. Long-pressed bookmarks get highlighted ★.</p>
       <button value="cancel" class="ghost">Cancel</button>
     </form>
   </dialog>
@@ -56,6 +103,7 @@
   <!-- ⋯ menu -->
   <dialog id="menuDlg" class="sheet">
     <form method="dialog">
+      <div class="grabber" aria-hidden="true"></div>
       <div class="sheet-title">Menu</div>
       <label class="field">When I tap a bookmark
         <select id="tapMode">
@@ -64,10 +112,18 @@
           <option value="same">Open in this tab</option>
         </select>
       </label>
-      <button value="sync" class="secondary">Sync now</button>
-      <button value="export" class="secondary">Export CSV</button>
-      <button value="import" class="secondary">Import CSV…</button>
+      <button value="sync" class="secondary">⟳ Sync now</button>
+      <div class="row2">
+        <button value="export" class="secondary">Export CSV</button>
+        <button value="import" class="secondary">Import CSV…</button>
+      </div>
       <button value="settings" class="secondary">Sync settings</button>
+      <div class="gestures">
+        <b>Gestures</b>
+        <span>Swipe right → ✓ checked</span>
+        <span>Swipe left → ★ highlight</span>
+        <span>Long-press → Brave’s menu (and ★)</span>
+      </div>
       <button value="cancel" class="ghost">Close</button>
     </form>
   </dialog>
@@ -75,6 +131,7 @@
   <!-- Sync settings -->
   <dialog id="settingsDlg" class="sheet">
     <form id="settingsForm" autocomplete="off">
+      <div class="grabber" aria-hidden="true"></div>
       <div class="sheet-title">Sync settings</div>
       <p class="muted small">Use the same repo and passphrase as the extension on your laptop. These stay on this phone only.</p>
       <label class="field">Paste setup link <span class="muted small">(optional, fills in the first three boxes)</span>
@@ -91,6 +148,8 @@
       <button type="button" class="ghost" id="settingsClose">Close</button>
     </form>
   </dialog>
+
+  <div id="toast" class="toast" role="status" hidden><span id="toastText"></span><button type="button" id="toastAction"></button></div>
 
   <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
 

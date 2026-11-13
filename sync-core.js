@@ -11,6 +11,7 @@
 export const FILES = {
   bookmarks: 'bookmarks.enc.json', // written by the laptop only
   checked: 'checked.enc.json', // written by both
+  highlights: 'highlights.enc.json', // long-press highlights, written by the phone
 };
 
 const ITERATIONS = 600000;
@@ -228,10 +229,17 @@ export function sameMarks(a = {}, b = {}) {
 // Pull the other device's marks, merge with ours, push the result if it
 // changed. Returns the merged marks. With `replaceUnreadable`, a remote file
 // that can't be decrypted (old passphrase) is overwritten instead of failing.
-export async function syncMarks(store, passphrase, localMarks, who, { replaceUnreadable = false } = {}) {
+// `file` lets the same logic sync other per-bookmark flags (e.g. highlights).
+export async function syncMarks(
+  store,
+  passphrase,
+  localMarks,
+  who,
+  { replaceUnreadable = false, file = FILES.checked } = {}
+) {
   let local = localMarks;
   for (let attempt = 0; attempt < 4; attempt++) {
-    const remote = await store.read(FILES.checked);
+    const remote = await store.read(file);
     let remoteMarks = {};
     let salt = null;
     if (remote) {
@@ -248,7 +256,7 @@ export async function syncMarks(store, passphrase, localMarks, who, { replaceUnr
     if (unchanged) return merged;
     const text = await encryptJson({ v: 1, updatedAt: Date.now(), by: who, marks: merged }, passphrase, salt);
     try {
-      await store.write(FILES.checked, text, remote?.sha, `Update checked marks (${who})`);
+      await store.write(file, text, remote?.sha, `Update ${file.replace('.enc.json', '')} (${who})`);
       return merged;
     } catch (err) {
       if (!(err instanceof ConflictError)) throw err;
@@ -308,12 +316,16 @@ function csvCell(value) {
 
 const day = (ms) => (ms > 0 ? new Date(ms).toLocaleDateString('en-CA') : '');
 
-// items: [{ id, title, url, path, dateAdded }]
-export function toCsv(items, marks) {
-  const rows = [['Title', 'URL', 'Folder', 'Date added', 'Checked', 'Checked on', 'ID']];
+// items: [{ id, title, url, path, dateAdded }]. `highlights` is optional.
+export function toCsv(items, marks, highlights) {
+  const head = ['Title', 'URL', 'Folder', 'Date added', 'Checked', 'Checked on', 'ID'];
+  if (highlights) head.push('Highlighted');
+  const rows = [head];
   for (const b of items) {
     const t = marks[b.id] || 0;
-    rows.push([b.title, b.url, b.path, day(b.dateAdded), t > 0 ? 'yes' : '', day(t), b.id]);
+    const row = [b.title, b.url, b.path, day(b.dateAdded), t > 0 ? 'yes' : '', day(t), b.id];
+    if (highlights) row.push((highlights[b.id] || 0) > 0 ? 'yes' : '');
+    rows.push(row);
   }
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
 }
@@ -364,7 +376,9 @@ export function csvToSnapshot(text) {
   const iChecked = col('checked');
   const iCheckedOn = col('checked on');
   const iId = col('id');
+  const iHl = col('highlighted');
   if (iUrl < 0) throw new Error('The CSV needs at least a “URL” column.');
+  const highlights = {};
 
   const root = { i: 'csv-root', t: '', c: [] };
   const folders = new Map([['', root]]);
@@ -392,6 +406,7 @@ export function csvToSnapshot(text) {
     if (iChecked >= 0 && /^(yes|true|1|✓)$/i.test((r[iChecked] || '').trim())) {
       marks[id] = (iCheckedOn >= 0 && Date.parse(r[iCheckedOn])) || Date.now();
     }
+    if (iHl >= 0 && /^(yes|true|1|★)$/i.test((r[iHl] || '').trim())) highlights[id] = Date.now();
   });
-  return { tree: root.c, marks };
+  return { tree: root.c, marks, highlights };
 }
