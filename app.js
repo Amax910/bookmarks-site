@@ -584,19 +584,54 @@ function openSettings(prefill) {
 document.querySelectorAll('[data-open="settingsDlg"]').forEach((b) => b.addEventListener('click', () => openSettings()));
 
 // Setup link from the extension: https://…/#setup=<base64url {owner, repo, token}>
-function takeSetupLink() {
-  const m = location.hash.match(/^#setup=([A-Za-z0-9_-]+)$/);
-  if (!m) return null;
-  history.replaceState(null, '', location.pathname + location.search); // wipe the token from the address bar
+// Returns the settings, null if there's no setup part, or false if it's damaged.
+function parseSetup(text) {
+  let s = String(text || '');
   try {
-    let b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    s = decodeURIComponent(s);
+  } catch {}
+  const m = s.match(/setup=([A-Za-z0-9_\-+/=\s]+)/);
+  if (!m) return null;
+  try {
+    let b64 = m[1].replace(/\s/g, '').replace(/=+$/, '').replace(/-/g, '+').replace(/_/g, '/');
     b64 += '='.repeat((4 - (b64.length % 4)) % 4);
     const v = JSON.parse(new TextDecoder().decode(b64ToBytes(b64)));
-    return v.owner && v.repo && v.token ? { owner: v.owner, repo: v.repo, token: v.token } : null;
+    return v.owner && v.repo && v.token ? { owner: v.owner, repo: v.repo, token: v.token } : false;
   } catch {
-    return null;
+    return false;
   }
 }
+
+function takeSetupLink() {
+  if (!/setup/.test(location.hash)) return;
+  const setup = parseSetup(location.hash);
+  history.replaceState(null, '', location.pathname + location.search); // wipe the token from the address bar
+  if (setup) {
+    if (settingsDlg.open) settingsDlg.close();
+    openSettings(setup);
+  } else if (setup === false) {
+    showNotice('That setup link looks damaged (the app you sent it with may have cut it off). Copy it again on the laptop, or paste it in ⋯ → Sync settings.');
+  }
+}
+// Opening the link while the site is already open only changes the #part,
+// which doesn't reload the page, so listen for that too.
+window.addEventListener('hashchange', takeSetupLink);
+
+$('setupPaste').addEventListener('input', (e) => {
+  const v = e.target.value.trim();
+  if (!v) return;
+  const setup = parseSetup(v);
+  e.target.value = '';
+  if (setup) {
+    for (const k of ['owner', 'repo', 'token']) settingsForm.elements[k].value = setup[k];
+    settingsMsg.className = 'msg ok';
+    settingsMsg.textContent = 'Filled in from your setup link. Type your passphrase to finish.';
+    settingsForm.elements.passphrase.focus();
+  } else {
+    settingsMsg.className = 'msg err';
+    settingsMsg.textContent = 'That doesn’t look like a complete setup link. Copy it again on the laptop.';
+  }
+});
 $('settingsClose').addEventListener('click', () => settingsDlg.close());
 $('showSecrets').addEventListener('change', (e) => {
   for (const k of ['token', 'passphrase']) settingsForm.elements[k].type = e.target.checked ? 'text' : 'password';
@@ -655,8 +690,7 @@ searchEl.value = state.ui.query || '';
 hideCheckedEl.checked = !!state.ui.hideChecked;
 indexSnapshot();
 render();
-const setup = takeSetupLink();
-if (setup) openSettings(setup);
+if (/setup/.test(location.hash)) takeSetupLink();
 else if (state.settings) sync();
 
 if ('serviceWorker' in navigator) {

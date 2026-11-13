@@ -1,7 +1,7 @@
 // Makes the site open instantly and work offline. Only the site's own files
 // are cached; GitHub API calls always go to the network.
 
-const CACHE = 'bookmarks-site-v1';
+const CACHE = 'bookmarks-site-v2';
 const SHELL = [
   './',
   'index.html',
@@ -27,20 +27,24 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Serve from cache straight away, refresh the cache in the background.
+// Network first, so updates show up straight away; the cached copy is only
+// used when the phone is offline (or the network takes over 4 s).
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
+      const network = fetch(e.request, { cache: 'no-cache' }).then((res) => {
+        if (res.ok) cache.put(e.request, res.clone());
+        return res;
+      });
+      const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
+      try {
+        const res = await Promise.race([network, timeout]);
+        if (res) return res;
+      } catch {}
       const cached = await cache.match(e.request, { ignoreSearch: true });
-      const fresh = fetch(e.request)
-        .then((res) => {
-          if (res.ok) cache.put(e.request, res.clone());
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fresh;
+      return cached || network;
     })
   );
 });

@@ -77,6 +77,9 @@
     <form id="settingsForm" autocomplete="off">
       <div class="sheet-title">Sync settings</div>
       <p class="muted small">Use the same repo and passphrase as the extension on your laptop. These stay on this phone only.</p>
+      <label class="field">Paste setup link <span class="muted small">(optional, fills in the first three boxes)</span>
+        <input id="setupPaste" type="text" inputmode="url" placeholder="https://…#setup=…" spellcheck="false" autocapitalize="off" autocomplete="off">
+      </label>
       <label class="field">GitHub username <input name="owner" required spellcheck="false" autocapitalize="off"></label>
       <label class="field">Private repo name <input name="repo" required spellcheck="false" autocapitalize="off"></label>
       <label class="field">Access token <input name="token" type="password" required spellcheck="false" autocapitalize="off"></label>
